@@ -105,6 +105,10 @@ export default defineConfig([
   {
     files: ['tests/reboop/**/*.{js,mjs,cjs,ts,mts,cts}'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: {
+      // Negative validation tests must distinguish an explicit null from an absent value.
+      'unicorn/no-null': 'off',
+    },
   },
   {
     files: ['scripts/publish.ts'],
@@ -118,6 +122,13 @@ export default defineConfig([
     rules: {
       // The Web AbortSignal contract preserves arbitrary caller-supplied reasons, not only Errors.
       '@typescript-eslint/prefer-promise-reject-errors': ['error', { allowThrowingUnknown: true }],
+    },
+  },
+  {
+    files: ['packages/reboop/src/index.ts'],
+    rules: {
+      // Forward failures from injected fetch unchanged, including errors from another realm.
+      '@typescript-eslint/only-throw-error': ['error', { allowThrowingUnknown: true }],
     },
   },
 ]);

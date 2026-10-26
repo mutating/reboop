@@ -1,6 +1,7 @@
 import isNetworkError from 'is-network-error';
 import pRetry from 'p-retry';
 import { abortable } from './abortable.js';
+import { prepareRequest } from './prepare-request.js';
 
 export interface ClientOptions {
   readonly baseUrl?: string | URL;
@@ -62,6 +63,13 @@ export class TimeoutError extends Error {
 
 type ReadBody<T> = (response: Response) => T | Promise<T>;
 
+// Isolate attempt failures from p-retry's normalization and control error types.
+class AttemptFailure extends Error {
+  constructor(readonly original: unknown) {
+    super();
+  }
+}
+
 function validateMilliseconds(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) {
     throw new RangeError(`${name} must be an integer between 1 and 2147483647`);
@@ -76,6 +84,7 @@ function validateRetries(value: number): void {
 
 async function attempt<T>(
   request: Request,
+  init: RequestInit,
   read: ReadBody<T>,
   timeoutMs: number,
   fetcher: typeof globalThis.fetch,
@@ -87,19 +96,22 @@ async function attempt<T>(
   }, timeoutMs);
   try {
     return await abortable(async () => {
-      const response = await fetcher(
-        new Request(request, {
-          signal,
-          // Undici's Request copy constructor otherwise drops this policy.
-          referrerPolicy: request.referrerPolicy,
-        }),
-      );
+      const response = await fetcher(request, {
+        ...init,
+        method: request.method,
+        signal,
+        // A nonempty RequestInit resets both referrer fields in the Fetch constructor.
+        referrer: request.referrer,
+        referrerPolicy: request.referrerPolicy,
+      });
       signal.throwIfAborted();
       if (!response.ok) {
         throw new HTTPError(response);
       }
       return read(response);
     }, signal);
+  } catch (error) {
+    throw new AttemptFailure(error);
   } finally {
     clearTimeout(timer);
   }
@@ -109,13 +121,15 @@ async function attempt<T>(
 Create a Web Fetch client. DNS and connection selection remain with the runtime.
 */
 export function createClient(options: ClientOptions = {}): Client {
+  const {
+    retries = Infinity,
+    timeoutMs = 20_000,
+    retryDelayMs = 1000,
+    maxRetryDelayMs = 10_000,
+  } = options;
   const baseUrl = options.baseUrl === undefined ? undefined : new URL(options.baseUrl).href;
   const headers = new Headers(options.headers);
   const credentials = options.credentials ?? 'same-origin';
-  const retries = options.retries ?? Infinity;
-  const timeoutMs = options.timeoutMs ?? 20_000;
-  const retryDelayMs = options.retryDelayMs ?? 1000;
-  const maxRetryDelayMs = options.maxRetryDelayMs ?? 10_000;
   const fetcher = options.fetch ?? fetch.bind(globalThis);
   validateRetries(retries);
   validateMilliseconds('timeoutMs', timeoutMs);
@@ -133,36 +147,52 @@ export function createClient(options: ClientOptions = {}): Client {
     const {
       retries: retryLimit = retries,
       timeoutMs: deadlineMs = timeoutMs,
-      ...init
+      credentials: requestCredentials = credentials,
+      signal,
+      headers: extraHeaders,
     } = requestOptions;
     validateRetries(retryLimit);
     validateMilliseconds('timeoutMs', deadlineMs);
-    const requestHeaders = new Headers(headers);
-    const extraHeaders = new Headers(init.headers);
-    for (const [name, value] of extraHeaders) {
-      requestHeaders.set(name, value);
-    }
-    // Construct once before retrying: invalid URLs, methods, headers and bodies fail immediately.
-    const request = new Request(new URL(input, baseUrl), {
-      credentials,
-      ...init,
-      headers: requestHeaders,
-    });
-    if (!['http:', 'https:'].includes(new URL(request.url).protocol)) {
+    // Do not acquire streaming upload resources for an already cancelled operation.
+    signal?.throwIfAborted();
+    const url = new URL(input, baseUrl);
+    if (!['http:', 'https:'].includes(url.protocol)) {
       throw new TypeError('Only HTTP and HTTPS URLs are supported');
     }
+    const requestHeaders = new Headers(headers);
+    const additions = new Headers(extraHeaders);
+    for (const [name, value] of additions) {
+      requestHeaders.set(name, value);
+    }
+    const { request, init } = prepareRequest(url, requestOptions, {
+      credentials: requestCredentials,
+      headers: requestHeaders,
+      signal,
+    });
+    const canRetry = ['GET', 'HEAD'].includes(request.method);
+    if (canRetry && init.body !== undefined && init.body !== null) {
+      throw new TypeError('GET and HEAD requests cannot have a body');
+    }
     try {
-      return await pRetry(() => attempt(request, read, deadlineMs, fetcher), {
-        retries: ['GET', 'HEAD'].includes(request.method) ? retryLimit : 0,
+      return await pRetry(() => attempt(request, init, read, deadlineMs, fetcher), {
+        retries: canRetry ? retryLimit : 0,
         minTimeout: retryDelayMs,
         maxTimeout: maxRetryDelayMs,
         signal: request.signal,
-        shouldRetry: ({ error }): boolean => error instanceof TimeoutError || isNetworkError(error),
+        shouldRetry: ({ error }): boolean => {
+          const failure = error instanceof AttemptFailure ? error.original : error;
+          try {
+            return failure instanceof TimeoutError || isNetworkError(failure);
+          } catch {
+            // Uninspectable failures must be returned unchanged, without retrying.
+          }
+          return false;
+        },
       });
     } catch (error) {
       // p-retry normalizes thrown values; cancellation must preserve the caller's exact reason.
       request.signal.throwIfAborted();
-      throw error;
+      throw error instanceof AttemptFailure ? error.original : error;
     }
   }
 

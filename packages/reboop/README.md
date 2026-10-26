@@ -32,14 +32,14 @@ await api.json('items', {
 
 ## Retry policy
 
-| Failure                                                    | GET / HEAD          | Other methods |
-| ---------------------------------------------------------- | ------------------- | ------------- |
-| Fetch network error, including interruption of a body read | Retry               | Reject        |
-| Attempt deadline exceeded                                  | Retry               | Reject        |
-| HTTP error (including 408, 429 and 5xx)                    | Reject: HTTPError   | Reject        |
-| Invalid JSON or other non-network error                    | Reject              | Reject        |
-| Caller cancellation                                        | Reject immediately  | Reject        |
-| Invalid URL, method, headers or body                       | Reject before fetch | Reject        |
+| Failure                                                    | GET / HEAD                | Other methods |
+| ---------------------------------------------------------- | ------------------------- | ------------- |
+| Fetch network error, including interruption of a body read | Retry                     | Reject        |
+| Attempt deadline exceeded                                  | Retry                     | Reject        |
+| HTTP error (including 408, 429 and 5xx)                    | Reject: HTTPError         | Reject        |
+| Invalid JSON or other non-network error                    | Reject                    | Reject        |
+| Caller cancellation                                        | Reject immediately        | Reject        |
+| Invalid URL, method, headers or body                       | Reject before network I/O | Reject        |
 
 GET and HEAD retry **indefinitely by default**. Use a caller signal or a finite `retries`
 limit when an operation must eventually stop. `retries` counts additional attempts: `0`
@@ -78,6 +78,8 @@ which are absent by default. Client defaults are snapshotted at creation. Each c
 `RequestInit` plus `timeoutMs` and `retries` overrides. Headers merge case-insensitively;
 request headers override client headers. Reboop does not set Content-Type, serialize request
 bodies, add authentication, or interpret application-specific response headers.
+An undefined `credentials` override inherits the client default; an explicit credentials mode
+overrides it.
 
 URLs use `new URL(input, baseUrl)` semantics. Relative inputs require an absolute `baseUrl`;
 without one, pass an absolute URL, including in browsers. A trailing `/` in the base matters:
@@ -116,8 +118,9 @@ entire operation, including backoff, pass `signal: AbortSignal.timeout(60_000)`.
 works before a request, during fetch/body consumption, and during backoff; it preserves the
 caller's exact abort reason and never retries it. Internal timers and cancellation listeners
 are cleaned up on completion. As with other JavaScript timers, background throttling or a
-blocked event loop can postpone deadlines. An injected `fetch` should honor Request.signal
-to stop its underlying I/O; reboop will reject on time even if that implementation ignores it.
+blocked event loop can postpone deadlines. An injected `fetch` must apply both its Request
+input and RequestInit overrides, including `init.signal`. Reboop rejects even if that
+implementation ignores cancellation; stopping its underlying I/O remains its responsibility.
 
 ## Errors
 

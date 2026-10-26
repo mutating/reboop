@@ -1,3 +1,5 @@
+import { runInNewContext } from 'node:vm';
+import { AbortError as RetryAbortError } from 'p-retry';
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { createClient, HTTPError, TimeoutError } from '../../packages/reboop/src/index.js';
@@ -23,7 +25,7 @@ function getRequest(fetcher: Mock<typeof fetch>, index = 0): Request {
   if (!(input instanceof Request)) {
     throw new TypeError('Expected a Request passed to fetch');
   }
-  return input;
+  return new Request(input, fetcher.mock.calls.at(index)?.[1]);
 }
 
 function pendingResponse(): {
@@ -54,13 +56,95 @@ afterEach(() => {
 });
 
 describe('requests and response readers', () => {
+  it('accepts RequestInit class getters, including private state, without invoking unrelated getters', async () => {
+    class WriteOptions implements RequestOptions {
+      readonly #payload = 'payload';
+      readonly #method = 'POST';
+      get method(): string {
+        return this.#method;
+      }
+      get body(): string {
+        return this.#payload;
+      }
+      get headers(): Headers {
+        return new Headers({ 'X-Test': this.#payload });
+      }
+      get unrelated(): never {
+        throw new Error('Not a RequestInit field');
+      }
+    }
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'));
+    await expect(createClient({ fetch: fetcher }).text(endpoint, new WriteOptions())).resolves.toBe(
+      'ok',
+    );
+    const request = getRequest(fetcher);
+    expect(request.method).toBe('POST');
+    expect(request.headers.get('x-test')).toBe('payload');
+    await expect(request.text()).resolves.toBe('payload');
+  });
+
+  it('reads non-enumerable RequestInit fields', async () => {
+    const options = Object.defineProperties(
+      {},
+      {
+        method: { value: 'POST' },
+        body: { value: 'hidden payload' },
+        headers: { value: { 'X-Test': 'hidden' } },
+      },
+    );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'));
+    await createClient({ fetch: fetcher }).text(endpoint, options);
+    const request = getRequest(fetcher);
+    expect(request.method).toBe('POST');
+    expect(request.headers.get('x-test')).toBe('hidden');
+    await expect(request.text()).resolves.toBe('hidden payload');
+  });
+
+  it('snapshots RequestInit getters so retries cannot change the method or body', async () => {
+    const method = vi.fn().mockReturnValueOnce('GET').mockReturnValue('POST');
+    const body = vi.fn().mockReturnValueOnce(undefined).mockReturnValue('unsafe');
+    const options: RequestOptions = Object.defineProperties(
+      {},
+      {
+        method: { get: method },
+        body: { get: body },
+      },
+    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(new Response('ok'));
+    const pending = createClient({ fetch: fetcher, retries: 1 }).text(endpoint, options);
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(pending).resolves.toBe('ok');
+    expect(method).toHaveBeenCalledTimes(1);
+    expect(body).toHaveBeenCalledTimes(1);
+    expect(getRequest(fetcher).method).toBe('GET');
+    expect(getRequest(fetcher, 1).method).toBe('GET');
+    await expect(getRequest(fetcher, 1).text()).resolves.toBe('');
+  });
+
+  it.each(['omit', 'include'] as const)(
+    'preserves default credentials %s when the override is undefined',
+    async (credentials) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'));
+      const client = createClient({ fetch: fetcher, credentials });
+      const pending: unknown = Reflect.apply(client.request, client, [
+        endpoint,
+        { credentials: undefined },
+      ]);
+      await expect(pending).resolves.toBeInstanceOf(Response);
+      expect(getRequest(fetcher).credentials).toBe(credentials);
+    },
+  );
+
   it('uses global fetch with the native defaults and returns the original response', async () => {
     const response = new Response('hello');
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
     vi.stubGlobal('fetch', fetcher);
     const client = createClient();
     await expect(client.request(endpoint)).resolves.toBe(response);
-    expect(fetcher).toHaveBeenCalledExactlyOnceWith(expect.any(Request));
+    expect(fetcher).toHaveBeenCalledTimes(1);
     const request = getRequest(fetcher);
     expect(request.url).toBe(endpoint);
     expect(request.method).toBe('GET');
@@ -154,6 +238,21 @@ describe('requests and response readers', () => {
     expect(getRequest(fetcher).headers.get('x-default')).toBe('yes');
   });
 
+  it.each(['', 'https://page.example.test/path'])(
+    'preserves the explicit referrer on every attempt: %s',
+    async (referrer) => {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValue(new Response('ok'));
+      const pending = createClient({ fetch: fetcher, retries: 1 }).text(endpoint, { referrer });
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(pending).resolves.toBe('ok');
+      expect(getRequest(fetcher).referrer).toBe(referrer);
+      expect(getRequest(fetcher, 1).referrer).toBe(referrer);
+    },
+  );
+
   it('snapshots client defaults and does not mutate caller headers', async () => {
     const headers = new Headers({ 'x-default': 'original' });
     const baseUrl = new URL('https://api.example.test/v1/');
@@ -212,6 +311,104 @@ describe('requests and response readers', () => {
 });
 
 describe('retry policy', () => {
+  it.each(['name', 'message', 'stack'])(
+    'preserves an error with an inaccessible %s without retrying',
+    async (name) => {
+      const error = new TypeError('Failed to fetch');
+      Object.defineProperty(error, name, {
+        get: (): never => {
+          throw new Error('Property unavailable');
+        },
+      });
+      const fetcher = vi.fn<typeof fetch>().mockRejectedValue(error);
+      await expect(createClient({ fetch: fetcher }).text(endpoint)).rejects.toSatisfy(
+        (reason: unknown): boolean => reason === error,
+      );
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('preserves an uninspectable adapter rejection without retrying', async () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(proxy);
+    await expect(createClient({ fetch: fetcher }).text(endpoint)).rejects.toSatisfy(
+      (reason: unknown): boolean => reason === proxy,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not interpret retry control errors thrown by an injected fetch', async () => {
+    const error = new RetryAbortError('adapter declined');
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(error);
+    await expect(createClient({ fetch: fetcher }).text(endpoint)).rejects.toBe(error);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      name: 'SyntaxError',
+      create: (): unknown => runInNewContext('new SyntaxError("Invalid JSON")'),
+    },
+    {
+      name: 'TypeError',
+      create: (): unknown => runInNewContext('new TypeError("invalid argument")'),
+    },
+    { name: 'Error', create: (): unknown => runInNewContext('new Error("adapter failure")') },
+  ])(
+    'preserves a non-network error from another realm without retrying: $name',
+    async ({ create }) => {
+      const error = create();
+      const response = new Response('unread');
+      vi.spyOn(response, 'json').mockRejectedValue(error);
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
+      await expect(createClient({ fetch: fetcher }).json(endpoint)).rejects.toBe(error);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('retries a network error from another realm', async () => {
+    const error: unknown = runInNewContext('new TypeError("Failed to fetch")');
+    expect(error).not.toBeInstanceOf(Error);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValue(new Response('recovered'));
+    const pending = createClient({ fetch: fetcher, retries: 1 }).text(endpoint);
+    const recovered = expect(pending).resolves.toBe('recovered');
+    await vi.advanceTimersByTimeAsync(1000);
+    await recovered;
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([0, 1])(
+    'preserves the original cross-realm network error after %i retries',
+    async (retries) => {
+      const error: unknown = runInNewContext('new TypeError("Failed to fetch")');
+      const fetcher = vi.fn<typeof fetch>().mockRejectedValue(error);
+      const pending = createClient({ fetch: fetcher, retries }).text(endpoint);
+      const rejected = expect(pending).rejects.toBe(error);
+      await vi.runAllTimersAsync();
+      await rejected;
+      expect(fetcher).toHaveBeenCalledTimes(retries + 1);
+    },
+  );
+
+  it('retries a body interrupted by a cross-realm network error', async () => {
+    const { response, stream } = pendingResponse();
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response)
+      .mockResolvedValue(Response.json({ recovered: true }));
+    const pending = createClient({ fetch: fetcher, retries: 1 }).json(endpoint);
+    const recovered = expect(pending).resolves.toEqual({ recovered: true });
+    await vi.advanceTimersByTimeAsync(0);
+    stream.error(runInNewContext('new TypeError("terminated")'));
+    await vi.advanceTimersByTimeAsync(1000);
+    await recovered;
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     'network error',
     'Failed to fetch',
@@ -483,6 +680,128 @@ describe('attempt deadlines', () => {
 });
 
 describe('caller cancellation', () => {
+  it('honors a signal defined by a RequestInit prototype getter', async () => {
+    class CancelOptions implements RequestOptions {
+      get signal(): AbortSignal {
+        return AbortSignal.abort('cancelled');
+      }
+    }
+    const fetcher = vi.fn<typeof fetch>();
+    await expect(createClient({ fetch: fetcher }).text(endpoint, new CancelOptions())).rejects.toBe(
+      'cancelled',
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('preserves a caller abort reason that cannot be inspected', async () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const controller = new AbortController();
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(hangingFetch);
+    const pending = createClient({ fetch: fetcher }).text(endpoint, { signal: controller.signal });
+    const rejected = expect(pending).rejects.toSatisfy(
+      (reason: unknown): boolean => reason === proxy,
+    );
+    controller.abort(proxy);
+    await rejected;
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(
+    [0, 1, 2, 3, 4, 5, 6, 7, 8].flatMap((steps) => [
+      { steps, reason: 'navigation' },
+      { steps, reason: new Error('navigation') },
+    ]),
+  )(
+    'preserves cancellation during response resolution after $steps microtasks ($reason)',
+    async ({ steps, reason }) => {
+      const controller = new AbortController();
+      function cancelAfter(remaining: number): void {
+        if (remaining === 0) {
+          controller.abort(reason);
+        } else {
+          queueMicrotask(() => {
+            cancelAfter(remaining - 1);
+          });
+        }
+      }
+      const fetcher = vi.fn<typeof fetch>().mockImplementation(() => {
+        cancelAfter(steps);
+        return Promise.resolve(new Response('completed'));
+      });
+      try {
+        const result = await createClient({ fetch: fetcher }).text(endpoint, {
+          signal: controller.signal,
+        });
+        expect(result).toBe('completed');
+      } catch (error) {
+        expect(error).toBe(reason);
+      }
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not acquire a Node upload iterator when the caller has already cancelled', async () => {
+    const acquire = vi.fn(() => ({
+      next: (): Promise<IteratorResult<Uint8Array>> =>
+        Promise.resolve({ done: true, value: undefined }),
+    }));
+    const body = { [Symbol.asyncIterator]: acquire };
+    const fetcher = vi.fn<typeof fetch>();
+    const client = createClient({ fetch: fetcher });
+    // Node's RequestInit accepts AsyncIterable uploads; the DOM type project does not.
+    const pending: unknown = Reflect.apply(client.request, client, [
+      endpoint,
+      {
+        method: 'POST',
+        body,
+        duplex: 'half',
+        signal: AbortSignal.abort('navigation'),
+      },
+    ]);
+    await expect(pending).rejects.toBe('navigation');
+    expect(acquire).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('releases a Node upload if its iterator cancels the operation during acquisition', async () => {
+    const source = new EventTarget();
+    const listener = vi.fn();
+    const controller = new AbortController();
+    const release = vi.fn((): Promise<IteratorResult<Uint8Array>> => {
+      source.removeEventListener('data', listener);
+      return Promise.resolve({ done: true, value: undefined });
+    });
+    const body = {
+      [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
+        source.addEventListener('data', listener);
+        controller.abort('source closed');
+        return {
+          next: (): Promise<IteratorResult<Uint8Array>> =>
+            Promise.resolve({ done: true, value: undefined }),
+          return: release,
+        };
+      },
+    };
+    const fetcher = vi.fn<typeof fetch>(fetch);
+    const client = createClient({ fetch: fetcher });
+    const pending: unknown = Reflect.apply(client.request, client, [
+      endpoint,
+      {
+        method: 'POST',
+        body,
+        duplex: 'half',
+        signal: controller.signal,
+      },
+    ]);
+    await expect(pending).rejects.toBe('source closed');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    source.dispatchEvent(new Event('data'));
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it.each([new Error('navigation'), 'custom reason', 42, undefined])(
     'preserves a pre-aborted signal reason: %s',
     async (reason) => {
@@ -555,6 +874,56 @@ describe('caller cancellation', () => {
 });
 
 describe('input validation', () => {
+  it.each(['GET', 'HEAD'])(
+    'rejects even an empty body for %s with a useful error',
+    async (method) => {
+      const fetcher = vi.fn<typeof fetch>();
+      await expect(
+        createClient({ fetch: fetcher }).request(endpoint, { method, body: '' }),
+      ).rejects.toThrow('GET and HEAD requests cannot have a body');
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts an explicit null body for a read', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'));
+    await expect(createClient({ fetch: fetcher }).text(endpoint, { body: null })).resolves.toBe(
+      'ok',
+    );
+  });
+
+  it.each(['ftp://example.test/', 'data:text/plain,hello'])(
+    'validates the protocol before acquiring a Node upload iterator: %s',
+    async (input) => {
+      const acquire = vi.fn(() => ({
+        next: (): Promise<IteratorResult<Uint8Array>> =>
+          Promise.resolve({ done: true, value: undefined }),
+      }));
+      const fetcher = vi.fn<typeof fetch>();
+      const client = createClient({ fetch: fetcher });
+      const pending: unknown = Reflect.apply(client.request, client, [
+        input,
+        {
+          method: 'POST',
+          body: { [Symbol.asyncIterator]: acquire },
+          duplex: 'half',
+        },
+      ]);
+      await expect(pending).rejects.toThrow('Only HTTP and HTTPS URLs are supported');
+      expect(acquire).not.toHaveBeenCalled();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['retries', 'timeoutMs', 'retryDelayMs', 'maxRetryDelayMs'])(
+    'rejects null instead of silently defaulting %s in JavaScript',
+    (name) => {
+      expect(() => {
+        Reflect.apply(createClient, undefined, [{ [name]: null }]);
+      }).toThrow(RangeError);
+    },
+  );
+
   it.each(['timeoutMs', 'retryDelayMs', 'maxRetryDelayMs'] as const)(
     'rejects invalid %s defaults',
     (name) => {

@@ -34,6 +34,28 @@ describe('native fetch against a local HTTP server', () => {
     return createClient({ baseUrl: origin, retries: 2, timeoutMs: 500, retryDelayMs: 5 });
   }
 
+  it('sends the same normalized method used to determine retry safety', async () => {
+    const methods: (string | undefined)[] = [];
+    handler.mockImplementation((request, response) => {
+      methods.push(request.method);
+      if (methods.length === 1) {
+        request.socket.destroy();
+      } else {
+        response.end('recovered');
+      }
+    });
+    const convert = vi.fn().mockReturnValueOnce('GET').mockReturnValue('POST');
+    const client = networkClient();
+    // JavaScript Fetch accepts stringifiable methods, even though the TS type is string.
+    const pending: unknown = Reflect.apply(client.text, client, [
+      '/items',
+      { method: { toString: convert } },
+    ]);
+    await expect(pending).resolves.toBe('recovered');
+    expect(methods).toEqual(['GET', 'GET']);
+    expect(convert).toHaveBeenCalledTimes(1);
+  });
+
   it('recovers from a connection reset before headers', async () => {
     handler
       .mockImplementationOnce((request) => {
