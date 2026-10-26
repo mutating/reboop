@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "lint:types": "tsc --noEmit",
     "prepack": "npm run build",
     "lint:package": "publint --strict"
   },

@@ -20,7 +20,7 @@ export default defineConfig([
     '.stryker-tmp/**',
   ]),
   {
-    files: ['**/*.{js,mjs,cjs,ts}'],
+    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     extends: [
       js.configs.recommended,
       tsConfigs.strictTypeChecked,
@@ -34,7 +34,6 @@ export default defineConfig([
       unicorn.configs.recommended,
     ],
     languageOptions: {
-      globals: { ...globals.node, ...globals.browser },
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
     linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: 'error' },
@@ -84,9 +83,33 @@ export default defineConfig([
     },
   },
   {
+    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
+    ignores: ['packages/reboop/src/**', 'tests/reboop/**'],
+    languageOptions: { globals: globals.node },
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        {
+          globals: Object.keys(globals.browser).filter(
+            (name) => !Object.hasOwn(globals.node, name),
+          ),
+          checkGlobalObject: true,
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/reboop/src/**/*.{js,mjs,cjs,ts,mts,cts}'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    files: ['tests/reboop/**/*.{js,mjs,cjs,ts,mts,cts}'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     files: ['scripts/publish.ts'],
     rules: {
-      // Archive paths contain only fixed package names and the validated numeric version.
+      // Archive paths use fixed names/a validated version; GITHUB_OUTPUT is a runner-owned file.
       'security/detect-non-literal-fs-filename': 'off',
     },
   },

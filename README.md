@@ -10,7 +10,8 @@ there are no implemented client functions or lint rules, and the test directorie
 
 ## Development
 
-Use Node.js 24 LTS (at least 24.11.0) and npm 11.6 or newer. Run `npm ci` once.
+Use Node.js 24 LTS (at least 24.11.0) and npm 11.21 or newer. CI pins npm 11.21.1.
+Run `npm ci` once.
 Work in `develop`; changes reach `main` through pull requests.
 
 | Command       | Checks                                                                    |
@@ -27,11 +28,17 @@ inline suppression comments cannot disable checks. The Unicorn naming-abbreviati
 rule is excluded because naming style is not a correctness check.
 TypeScript also checks optional properties, indexed access, unused bindings,
 exhaustiveness-related control flow and JavaScript configuration files.
+The client has a separate Web API type environment; the ESLint plugin, scripts and
+configuration run in a Node-only environment. Each package is typechecked independently.
+Client tests have their own Web API/Node type project so imports of browser sources
+are not rechecked under the Node-only infrastructure project. Plugin tests remain Node-only.
+Build, coverage and mutation discovery include JavaScript and TypeScript sources
+(`.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`); declaration files are not mutated.
 
 ### Tests and mutation testing
 
 Put tests in `tests/reboop/` and `tests/reboop-eslint/`. Vitest supports
-`*.test.ts`, `*.spec.ts`, `*.test.js` and `*.spec.js`.
+`*.test.*` and `*.spec.*` using the six JavaScript/TypeScript extensions above.
 The empty suite is deliberately allowed during scaffolding; no placeholder assertions
 inflate the test count. Coverage thresholds are 100% per source file, and Stryker's
 mutation threshold is 100%. Stryker's `allowEmpty` permits the initial empty test run.
@@ -68,6 +75,9 @@ the packages, publishes the exact packed archives, then creates a `v0.1.N` GitHu
 release containing those archives. It updates neither `main` nor `develop` with
 version commits. Retrying a partially completed run reuses its version and skips
 an existing npm version only when its SHA-512 integrity matches the local archive.
+Versions are initially published under an individual `release-0.1.N` tag. Only after
+both packages exist does the publisher advance their `latest` tags, and it never
+moves a tag backwards. A historical retry also leaves GitHub's latest release unchanged.
 
 Initial publishing requires the `NPM_TOKEN` Actions secret. OIDC permissions are
 also enabled so publishing can use npm Trusted Publishing after both packages have

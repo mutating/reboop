@@ -48,8 +48,10 @@ Once both packages exist, configure their npm Trusted Publisher separately:
 - Repository: `reboop`.
 - Workflow filename: `ci.yml`.
 - Environment: leave empty (the release job does not use a GitHub environment).
+- Enable **Allow npm dist-tag** so the workflow can advance `latest` after both publications.
 
-The workflow already grants `id-token: write` and uses a supported npm CLI on a
+The workflow already grants `id-token: write` and pins npm 11.21.1 (including OIDC
+support for `npm dist-tag`) on a
 GitHub-hosted runner. After the publishers are configured, remove `NPM_TOKEN` so npm
 uses the GitHub OIDC identity. The workflow's provenance flag also attests token-based
 bootstrap publications. Follow npm's current publisher setup and expiry requirements:
@@ -66,6 +68,12 @@ Its version stays unchanged. The publisher compares archive integrity and resume
 without trying to overwrite immutable npm versions. Different contents at an existing
 version are an error. Registry errors other than an explicit missing-version response
 also fail the job instead of being mistaken for an unpublished version.
+
+Each immutable version is first published with its own `release-0.1.N` tag. The
+publisher advances `latest` only after both versions exist and only when the release
+version is newer than the current tag. An older partial run can therefore finish
+without npm rejecting an implicit historical `latest` update or moving either
+package's latest tag backwards. Historical GitHub releases are not marked latest.
 
 Versions are allocated in CI, so routine development does not modify package versions.
 The checked-in `0.0.0-development` version is only a local scaffold version.

@@ -3,7 +3,7 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": { "configFile": "vitest.config.ts" },
-  "mutate": ["packages/*/src/**/*.ts", "!packages/*/src/**/*.d.ts"],
+  "mutate": ["packages/*/src/**/*.{js,mjs,cjs,ts,mts,cts}", "!packages/*/src/**/*.d.{ts,mts,cts}"],
   "coverageAnalysis": "perTest",
   "allowEmpty": true,
   "thresholds": { "high": 100, "low": 100, "break": 100 },

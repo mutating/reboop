@@ -8,5 +8,7 @@ runs:
         node-version-file: .node-version
         cache: npm
         registry-url: https://registry.npmjs.org
+    - run: npm install --global npm@11.21.1
+      shell: bash
     - run: npm ci
       shell: bash

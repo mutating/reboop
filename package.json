@@ -9,13 +9,13 @@
   ],
   "engines": {
     "node": ">=24.11.0",
-    "npm": ">=11.6.0"
+    "npm": ">=11.21.0"
   },
   "scripts": {
     "build": "npm run build --workspaces",
     "lint": "npm run lint:eslint && npm run lint:types && npm run lint:format && npm run lint:packages",
     "lint:eslint": "eslint . --max-warnings 0 --no-inline-config",
-    "lint:types": "tsc --noEmit",
+    "lint:types": "tsc --noEmit && npm run lint:types --workspaces && tsc --noEmit -p tests/reboop/tsconfig.json && tsc --noEmit -p tests/reboop-eslint/tsconfig.json",
     "lint:format": "prettier --check .",
     "lint:packages": "npm run build && npm run lint:package --workspaces",
     "format": "prettier --write .",
@@ -30,6 +30,7 @@
     "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/eslint-plugin-promise": "7.3.0",
     "@types/node": "24.19.2",
+    "@types/semver": "7.8.0",
     "@vitest/coverage-v8": "5.0.5",
     "eslint": "10.13.0",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -42,6 +43,7 @@
     "globals": "17.13.0",
     "prettier": "3.9.10",
     "publint": "0.3.25",
+    "semver": "7.8.5",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.0",
     "vitest": "5.0.5"

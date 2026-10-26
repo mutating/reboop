@@ -1,0 +1,4 @@
+{
+  "extends": "../../packages/reboop-eslint/tsconfig.json",
+  "include": ["**/*", "../../packages/reboop-eslint/src/**/*"]
+}
