@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts}'],
-    passWithNoTests: true,
+    passWithNoTests: false,
     clearMocks: true,
     restoreMocks: true,
     unstubGlobals: true,

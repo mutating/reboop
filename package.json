@@ -17,7 +17,7 @@
     "lint:eslint": "eslint . --max-warnings 0 --no-inline-config",
     "lint:types": "tsc --noEmit && npm run lint:types --workspaces && tsc --noEmit -p tests/reboop/tsconfig.json && tsc --noEmit -p tests/reboop-eslint/tsconfig.json",
     "lint:format": "prettier --check .",
-    "lint:packages": "npm run build && npm run lint:package --workspaces",
+    "lint:packages": "npm run build && npm run lint:package --workspaces && tsc --noEmit -p tests/typecheck && tsc --noEmit -p tests/typecheck/tsconfig.browser.json",
     "format": "prettier --write .",
     "test": "vitest run --coverage",
     "mutate": "npm test && stryker run",

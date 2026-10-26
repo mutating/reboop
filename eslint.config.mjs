@@ -113,4 +113,11 @@ export default defineConfig([
       'security/detect-non-literal-fs-filename': 'off',
     },
   },
+  {
+    files: ['packages/reboop/src/abortable.ts'],
+    rules: {
+      // The Web AbortSignal contract preserves arbitrary caller-supplied reasons, not only Errors.
+      '@typescript-eslint/prefer-promise-reject-errors': ['error', { allowThrowingUnknown: true }],
+    },
+  },
 ]);

@@ -5,8 +5,9 @@ Two ESM npm packages maintained together:
 - `reboop`: HTTP client with consistent retries, deadlines and cancellation.
 - `reboop-eslint`: ESLint plugin intended to enforce use of the configured client.
 
-Both packages are currently scaffolds: the source entry points export empty modules,
-there are no implemented client functions or lint rules, and the test directories are empty.
+`reboop` implements network retries for GET/HEAD, attempt deadlines that include body
+consumption, and caller cancellation. See its [API documentation](packages/reboop/README.md).
+`reboop-eslint` remains a scaffold; lint rules will be implemented separately.
 
 ## Development
 
@@ -32,6 +33,8 @@ The client has a separate Web API type environment; the ESLint plugin, scripts a
 configuration run in a Node-only environment. Each package is typechecked independently.
 Client tests have their own Web API/Node type project so imports of browser sources
 are not rechecked under the Node-only infrastructure project. Plugin tests remain Node-only.
+After building, consumer fixtures also check the published declarations separately with
+Node-only and browser-only types, with declaration checking enabled.
 Build, coverage and mutation discovery include JavaScript and TypeScript sources
 (`.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`); declaration files are not mutated.
 
@@ -39,12 +42,16 @@ Build, coverage and mutation discovery include JavaScript and TypeScript sources
 
 Put tests in `tests/reboop/` and `tests/reboop-eslint/`. Vitest supports
 `*.test.*` and `*.spec.*` using the six JavaScript/TypeScript extensions above.
-The empty suite is deliberately allowed during scaffolding; no placeholder assertions
-inflate the test count. Coverage thresholds are 100% per source file, and Stryker's
-mutation threshold is 100%. Stryker's `allowEmpty` permits the initial empty test run.
-Since Stryker can stop early when there are no tests, `make mutate` first runs Vitest
-with coverage enforcement. This prevents new source without tests from passing mutation
-checks. Once source is covered, surviving mutants independently fail Stryker.
+Client tests exercise configuration, all response readers, retry limits and backoff,
+network and HTTP errors, cancellation, deadlines, and resource cleanup. Local HTTP server
+tests also exercise native fetch with dropped connections, interrupted bodies, and stalled
+headers/bodies; they do not depend on external endpoints. Browser-specific network error
+messages are tested as fixtures; these are not browser engine integration tests.
+
+Empty test runs fail. Coverage thresholds are 100% per source file, and Stryker's mutation
+threshold is 100%. `make mutate` runs Vitest with coverage enforcement before Stryker;
+surviving mutants independently fail the mutation check. The plugin's empty entry point
+remains a scaffold, without placeholder assertions.
 
 Coverage is written to `coverage/`; mutation reports are written to `reports/mutation/`.
 Generated output, caches and archives are ignored by Git.

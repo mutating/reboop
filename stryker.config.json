@@ -5,7 +5,7 @@
   "vitest": { "configFile": "vitest.config.ts" },
   "mutate": ["packages/*/src/**/*.{js,mjs,cjs,ts,mts,cts}", "!packages/*/src/**/*.d.{ts,mts,cts}"],
   "coverageAnalysis": "perTest",
-  "allowEmpty": true,
+  "allowEmpty": false,
   "thresholds": { "high": 100, "low": 100, "break": 100 },
   "reporters": ["clear-text", "progress", "html", "json"],
   "htmlReporter": { "fileName": "reports/mutation/index.html" },
