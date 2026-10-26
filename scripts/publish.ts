@@ -48,7 +48,7 @@ function latestVersion(packageName: string): string | undefined {
 }
 
 for (const packageName of packageNames) {
-  const archive = `artifacts/${packageName}-${version}.tgz`;
+  const archive = path.resolve(`artifacts/${packageName}-${version}.tgz`);
   const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
   const lookup = spawnSync(
     process.execPath,
