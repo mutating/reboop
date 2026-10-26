@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import pRetry from 'p-retry';
 import { gt, valid } from 'semver';
 
 const npmCli = process.env['npm_execpath'];
@@ -9,13 +10,33 @@ if (npmCli === undefined || !path.isAbsolute(npmCli)) {
   throw new Error('Run this script through npm run release:publish.');
 }
 
-const version = process.env['RELEASE_VERSION'];
-if (version === undefined || !/^0\.1\.[1-9]\d*$/u.test(version)) {
+const configuredVersion = process.env['RELEASE_VERSION'];
+if (configuredVersion === undefined || !/^0\.1\.[1-9]\d*$/u.test(configuredVersion)) {
   throw new Error('RELEASE_VERSION must be 0.1.<GitHub Actions run number>.');
 }
 
 const packageNames = ['reboop', 'reboop-eslint'];
 const npmExecutable: string = npmCli;
+const version: string = configuredVersion;
+
+function publishedIntegrity(packageName: string): unknown {
+  const lookup = spawnSync(
+    process.execPath,
+    [npmExecutable, 'view', `${packageName}@${version}`, 'dist.integrity', '--json'],
+    { encoding: 'utf8' },
+  );
+  if (lookup.error !== undefined) {
+    throw lookup.error;
+  }
+  if (lookup.status === 0) {
+    const integrity: unknown = JSON.parse(lookup.stdout);
+    return integrity;
+  }
+  if (lookup.stdout.includes('E404') || lookup.stderr.includes('E404')) {
+    return undefined;
+  }
+  throw new Error(`Cannot inspect ${packageName}@${version}: ${lookup.stderr}`);
+}
 
 function latestVersion(packageName: string): string | undefined {
   const result = spawnSync(
@@ -47,26 +68,13 @@ function latestVersion(packageName: string): string | undefined {
   return latest;
 }
 
+const expectedIntegrities = new Map<string, string>();
 for (const packageName of packageNames) {
   const archive = path.resolve(`artifacts/${packageName}-${version}.tgz`);
   const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
-  const lookup = spawnSync(
-    process.execPath,
-    [npmCli, 'view', `${packageName}@${version}`, 'dist.integrity', '--json'],
-    { encoding: 'utf8' },
-  );
-  if (lookup.error !== undefined) {
-    throw lookup.error;
-  }
-  if (lookup.status === 0) {
-    const publishedIntegrity: unknown = JSON.parse(lookup.stdout);
-    if (publishedIntegrity !== integrity) {
-      throw new Error(
-        `${packageName}@${version} exists with different contents; refusing to replace it.`,
-      );
-    }
-    console.info(`${packageName}@${version} is already published with identical contents.`);
-  } else if (lookup.stdout.includes('E404') || lookup.stderr.includes('E404')) {
+  expectedIntegrities.set(packageName, integrity);
+  const published = publishedIntegrity(packageName);
+  if (published === undefined) {
     execFileSync(
       process.execPath,
       [
@@ -84,9 +92,38 @@ for (const packageName of packageNames) {
       },
     );
   } else {
-    throw new Error(`Cannot inspect ${packageName}@${version}: ${lookup.stderr}`);
+    if (published !== integrity) {
+      throw new Error(
+        `${packageName}@${version} exists with different contents; refusing to replace it.`,
+      );
+    }
+    console.info(`${packageName}@${version} is already published with identical contents.`);
   }
 }
+
+// npm can accept an upload before its processing makes the version readable.
+await Promise.all(
+  [...expectedIntegrities].map(async ([packageName, integrity]): Promise<void> => {
+    const pending = new Error(`${packageName}@${version} is still being processed by npm.`);
+    await pRetry(
+      () => {
+        const published = publishedIntegrity(packageName);
+        if (published === undefined) {
+          throw pending;
+        }
+        if (published !== integrity) {
+          throw new Error(`${packageName}@${version} has different published contents.`);
+        }
+      },
+      {
+        retries: 30,
+        minTimeout: 1000,
+        maxTimeout: 10_000,
+        shouldRetry: ({ error }) => error === pending,
+      },
+    );
+  }),
+);
 
 // Both immutable versions must exist before either public latest tag advances.
 let isLatest = true;
