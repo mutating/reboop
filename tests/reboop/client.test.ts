@@ -56,6 +56,28 @@ afterEach(() => {
 });
 
 describe('requests and response readers', () => {
+  it('replaces header groups without dropping repeated values', async () => {
+    const defaults = new Headers([
+      ['Set-Cookie', 'old=1'],
+      ['Set-Cookie', 'old=2'],
+      ['X-Keep', 'yes'],
+      ['X-Replace', 'old'],
+    ]);
+    const headers = new Headers([
+      ['Set-Cookie', 'a=1'],
+      ['Set-Cookie', 'b=2'],
+      ['X-Replace', 'new'],
+    ]);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('ok'));
+    await createClient({ fetch: fetcher, headers: defaults }).request(endpoint, { headers });
+    const result = getRequest(fetcher).headers;
+    expect(result.getSetCookie()).toEqual(['a=1', 'b=2']);
+    expect(result.get('x-keep')).toBe('yes');
+    expect(result.get('x-replace')).toBe('new');
+    expect(defaults.getSetCookie()).toEqual(['old=1', 'old=2']);
+    expect(headers.getSetCookie()).toEqual(['a=1', 'b=2']);
+  });
+
   it('accepts RequestInit class getters, including private state, without invoking unrelated getters', async () => {
     class WriteOptions implements RequestOptions {
       readonly #payload = 'payload';

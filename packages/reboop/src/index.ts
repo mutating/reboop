@@ -161,8 +161,12 @@ export function createClient(options: ClientOptions = {}): Client {
     }
     const requestHeaders = new Headers(headers);
     const additions = new Headers(extraHeaders);
+    // Replace each group, then retain every value yielded for that header name.
+    for (const name of additions.keys()) {
+      requestHeaders.delete(name);
+    }
     for (const [name, value] of additions) {
-      requestHeaders.set(name, value);
+      requestHeaders.append(name, value);
     }
     const { request, init } = prepareRequest(url, requestOptions, {
       credentials: requestCredentials,
