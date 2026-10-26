@@ -37,7 +37,9 @@ PR itself and successful checks are required. Direct pushes and force pushes to
    `reboop-eslint` at `0.1.<run_number>`, then creates the matching GitHub release.
 
 No organization scope is required for the npm names. Packages are public and MIT licensed.
-The initial packages are explicitly documented as scaffolds, not a working HTTP client/plugin.
+`reboop` implements the HTTP client; `reboop-eslint` remains a documented scaffold without rules.
+Before the first merge, the bootstrap token must be available to this repository's workflow.
+Successful lint, test and mutation checks do not establish npm publishing authorization.
 
 ## Switch to Trusted Publishing
 
@@ -48,7 +50,8 @@ Once both packages exist, configure their npm Trusted Publisher separately:
 - Repository: `reboop`.
 - Workflow filename: `ci.yml`.
 - Environment: leave empty (the release job does not use a GitHub environment).
-- Enable **Allow npm dist-tag** so the workflow can advance `latest` after both publications.
+- Enable **Allow npm publish** for the workflow's direct publications and **Allow npm dist-tag**
+  so it can advance `latest` after both packages are published.
 
 The workflow already grants `id-token: write` and pins npm 11.21.1 (including OIDC
 support for `npm dist-tag`) on a
