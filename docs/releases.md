@@ -72,6 +72,12 @@ without trying to overwrite immutable npm versions. Different contents at an exi
 version are an error. Registry errors other than an explicit missing-version response
 also fail the job instead of being mistaken for an unpublished version.
 
+npm may accept an upload before the version is publicly readable. Before advancing
+tags, the publisher waits for both versions and verifies their archive integrity.
+Only missing-version responses are retried, up to 30 times with backoff capped at
+10 seconds; other errors fail immediately. If npm processing exceeds this window,
+rerun the same workflow after the versions become available.
+
 Each immutable version is first published with its own `release-0.1.N` tag. The
 publisher advances `latest` only after both versions exist and only when the release
 version is newer than the current tag. An older partial run can therefore finish
