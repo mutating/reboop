@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "npm run build --workspaces",
-    "lint": "npm run lint:eslint && npm run lint:types && npm run lint:format && npm run lint:packages",
+    "lint": "npm run lint:packages && npm run lint:eslint && npm run lint:types && npm run lint:format",
     "lint:eslint": "eslint . --max-warnings 0 --no-inline-config",
     "lint:types": "tsc --noEmit && npm run lint:types --workspaces && tsc --noEmit -p tests/reboop/tsconfig.json && tsc --noEmit -p tests/reboop-eslint/tsconfig.json",
     "lint:format": "prettier --check .",
