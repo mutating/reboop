@@ -68,6 +68,19 @@ describe('native fetch against a local HTTP server', () => {
     expect(handler).toHaveBeenCalledTimes(2);
   });
 
+  it('recovers when Fetch terminates a body with invalid content encoding', async () => {
+    handler
+      .mockImplementationOnce((_request, response) => {
+        response.writeHead(200, { 'Content-Encoding': 'gzip', 'Content-Length': '3' });
+        response.end('bad');
+      })
+      .mockImplementation((_request, response) => {
+        response.end('recovered');
+      });
+    await expect(networkClient().text('/items')).resolves.toBe('recovered');
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
   it('retries a truncated response body after receiving headers', async () => {
     handler
       .mockImplementationOnce((_request, response) => {

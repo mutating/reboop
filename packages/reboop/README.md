@@ -51,8 +51,9 @@ Backoff is 1, 2, 4, 8, then 10 seconds between attempts by default, without jitt
 independent for each request. A new attempt gets a fresh timeout and abort signal. The original
 hostname is preserved; reboop does not resolve DNS or embed server addresses. Browser DNS,
 connection pooling and address selection still apply, so a retry **cannot guarantee switching
-to another IP**. CORS failures and some permanent network failures are indistinguishable from
-temporary Fetch network errors and can also keep retrying.
+to another IP**. CORS failures, corrupt content encodings (such as invalid gzip), and some
+permanent failures can be reported as the same Fetch network/body errors and keep retrying.
+These Fetch decoding failures are distinct from JSON parsing errors, which are not retried.
 
 Retry scheduling uses [p-retry](https://github.com/sindresorhus/p-retry), with network error
 recognition from [is-network-error](https://github.com/sindresorhus/is-network-error).
@@ -135,7 +136,7 @@ try {
   } else if (error instanceof TimeoutError) {
     console.error(`Attempt exceeded ${error.timeoutMs} ms`);
   } else {
-    throw error; // Last network error, decode failure, or caller abort reason.
+    throw error; // Last network error, JSON parsing failure, or caller abort reason.
   }
 }
 ```
