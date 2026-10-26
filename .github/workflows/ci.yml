@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Preserve every push, including pending main releases; do not replace older pending runs.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: make lint
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: make test
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+
+  mutate:
+    name: Mutation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - run: make mutate
+      - name: Upload mutation reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation
+          path: reports/mutation/
+          if-no-files-found: ignore
+
+  release:
+    name: Publish npm packages and GitHub release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, test, mutate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup
+      - name: Set shared version
+        run: |
+          version="0.1.${GITHUB_RUN_NUMBER}"
+          echo "RELEASE_VERSION=${version}" >> "$GITHUB_ENV"
+          npm version "$version" --workspaces --no-git-tag-version --ignore-scripts
+      - name: Build and validate both packages
+        run: npm run lint:packages
+      - name: Pack both packages
+        run: |
+          mkdir -p artifacts
+          npm pack --workspaces --pack-destination artifacts
+      - name: Publish both packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm run release:publish
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${RELEASE_VERSION}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          fi
+          gh release upload "$tag" artifacts/*.tgz --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Retain release archives
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-packages
+          path: artifacts/*.tgz
+          if-no-files-found: ignore

@@ -1,0 +1,8 @@
+node_modules/
+**/dist/
+coverage/
+reports/
+artifacts/
+.stryker-tmp/
+package-lock.json
+

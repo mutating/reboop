@@ -1,0 +1,49 @@
+{
+  "name": "reboop",
+  "version": "0.0.0-development",
+  "description": "A consistent HTTP client with retries, deadlines and cancellation.",
+  "type": "module",
+  "license": "MIT",
+  "author": "The Mutating Company",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mutating/reboop.git",
+    "directory": "packages/reboop"
+  },
+  "homepage": "https://github.com/mutating/reboop/tree/main/packages/reboop#readme",
+  "bugs": "https://github.com/mutating/reboop/issues",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "lint:package": "publint --strict"
+  },
+  "keywords": [
+    "fetch",
+    "http",
+    "retry",
+    "timeout",
+    "typescript"
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "name": "reboop-workspace",
+  "version": "0.0.0-development",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.11.0",
+    "npm": ">=11.6.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint:eslint && npm run lint:types && npm run lint:format && npm run lint:packages",
+    "lint:eslint": "eslint . --max-warnings 0 --no-inline-config",
+    "lint:types": "tsc --noEmit",
+    "lint:format": "prettier --check .",
+    "lint:packages": "npm run build && npm run lint:package --workspaces",
+    "format": "prettier --write .",
+    "test": "vitest run --coverage",
+    "mutate": "npm test && stryker run",
+    "check": "npm run lint && npm test && npm run mutate",
+    "release:publish": "node scripts/publish.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
+    "@types/eslint-plugin-promise": "7.3.0",
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "10.13.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import-x": "4.17.1",
+    "eslint-plugin-promise": "7.3.0",
+    "eslint-plugin-regexp": "3.3.1",
+    "eslint-plugin-security": "4.2.0",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "eslint-plugin-unicorn": "79.0.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "publint": "0.3.25",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5"
+  }
+}

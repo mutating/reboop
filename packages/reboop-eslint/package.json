@@ -1,0 +1,52 @@
+{
+  "name": "reboop-eslint",
+  "version": "0.0.0-development",
+  "description": "ESLint rules enforcing consistent HTTP requests through reboop.",
+  "type": "module",
+  "license": "MIT",
+  "author": "The Mutating Company",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mutating/reboop.git",
+    "directory": "packages/reboop-eslint"
+  },
+  "homepage": "https://github.com/mutating/reboop/tree/main/packages/reboop-eslint#readme",
+  "bugs": "https://github.com/mutating/reboop/issues",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "eslint": "^10.4.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "lint:package": "publint --strict"
+  },
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "reboop",
+    "fetch",
+    "retry"
+  ]
+}
