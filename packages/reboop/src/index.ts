@@ -37,6 +37,16 @@ export interface Client {
   */
   request: (input: string | URL, options?: RequestOptions) => Promise<Response>;
   /**
+  Read/decode a successful response inside the attempt deadline and retry scope.
+  The reader may run again for GET/HEAD; keep it free of external side effects
+  and return/await all response work that should be protected.
+  */
+  read: <T>(
+    input: string | URL,
+    reader: (response: Response) => T | Promise<T>,
+    options?: RequestOptions,
+  ) => Promise<T>;
+  /**
   The generic is a type assertion, not runtime schema validation.
   */
   json: <T = unknown>(input: string | URL, options?: RequestOptions) => Promise<T>;
@@ -202,6 +212,7 @@ export function createClient(options: ClientOptions = {}): Client {
 
   return {
     request: (input, init): Promise<Response> => send(input, (response) => response, init),
+    read: send,
     json: async <T = unknown>(input: string | URL, init?: RequestOptions): Promise<T> => {
       const result: unknown = await send(input, (response) => response.json(), init);
       return result as T;

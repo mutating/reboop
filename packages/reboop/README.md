@@ -95,19 +95,40 @@ Invalid settings fail immediately with RangeError.
 
 ## Response methods and deadlines
 
-| Method                            | Resolves to   | Deadline / retry scope           |
-| --------------------------------- | ------------- | -------------------------------- |
-| `api.json<T>(input, options)`     | `T`           | Headers and complete JSON body   |
-| `api.text(input, options)`        | `string`      | Headers and complete text body   |
-| `api.blob(input, options)`        | `Blob`        | Headers and complete binary body |
-| `api.arrayBuffer(input, options)` | `ArrayBuffer` | Headers and complete binary body |
-| `api.request(input, options)`     | `Response`    | **Headers only**                 |
+| Method                             | Resolves to   | Deadline / retry scope           |
+| ---------------------------------- | ------------- | -------------------------------- |
+| `api.json<T>(input, options)`      | `T`           | Headers and complete JSON body   |
+| `api.text(input, options)`         | `string`      | Headers and complete text body   |
+| `api.blob(input, options)`         | `Blob`        | Headers and complete binary body |
+| `api.arrayBuffer(input, options)`  | `ArrayBuffer` | Headers and complete binary body |
+| `api.read(input, reader, options)` | Reader result | Headers and the complete reader  |
+| `api.request(input, options)`      | `Response`    | **Headers only**                 |
 
 Body-reading methods keep the attempt deadline active until their body has been consumed.
 If a GET/HEAD body is interrupted, the whole request starts again. They buffer the full body
 in memory; use `request` for streaming and implement any stream recovery at the application
 level. After `request` resolves, consuming its response body is outside reboop's retry and
 timeout handling. Consume or cancel raw response bodies to release their resources.
+
+Use `read` when you need both the body and successful response metadata, such as `Link`
+pagination, `ETag`, or `Content-Disposition`, within the same protected attempt:
+
+```ts
+const page = await api.read('items', async (response) => ({
+  items: (await response.json()) as { id: string }[],
+  next: response.headers.get('Link'),
+  etag: response.headers.get('ETag'),
+}));
+```
+
+The reader accepts the original successful `Response` and may return a value or a promise;
+its return type is inferred. The optional third argument takes the same request options.
+The reader can run again after a GET/HEAD transport failure or deadline, so keep it limited
+to reading/decoding without external side effects. Return or await all work that should share
+the attempt deadline. Returning a Response or stream alone leaves later consumption outside
+that scope, just like `request`. Cancellation rejects the operation but cannot forcibly stop
+arbitrary reader work. HTTP errors reject before the reader is called; reader failures use
+the same retry policy as the built-in body methods.
 
 JSON uses native Response.json semantics: malformed or empty JSON rejects with SyntaxError,
 including an empty 204/HEAD response. Use `request` or `text` for responses with no JSON body.
