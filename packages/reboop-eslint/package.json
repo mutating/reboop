@@ -49,5 +49,9 @@
     "reboop",
     "fetch",
     "retry"
-  ]
+  ],
+  "dependencies": {
+    "@eslint-community/eslint-utils": "4.10.1",
+    "@typescript-eslint/types": "8.72.0"
+  }
 }

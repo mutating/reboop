@@ -37,7 +37,8 @@ PR itself and successful checks are required. Direct pushes and force pushes to
    `reboop-eslint` at `0.1.<run_number>`, then creates the matching GitHub release.
 
 No organization scope is required for the npm names. Packages are public and MIT licensed.
-`reboop` implements the HTTP client; `reboop-eslint` remains a documented scaffold without rules.
+`reboop` implements the HTTP client; `reboop-eslint` provides the `reboop/require-client`
+rule and its recommended flat configuration.
 Before the first merge, the bootstrap token must be available to this repository's workflow.
 Successful lint, test and mutation checks do not establish npm publishing authorization.
 
