@@ -21,3 +21,21 @@ export function readItems(): Promise<{ id: string }[]> {
   const client: Client = createClient(options);
   return client.json<{ id: string }[]>('items', request);
 }
+
+export function readPage(): Promise<{ body: string; next: string | null; status: number }> {
+  return createClient(options).read(
+    'items',
+    async (response) => ({
+      body: await response.text(),
+      next: response.headers.get('Link'),
+      status: response.status,
+    }),
+    request,
+  );
+}
+
+export function readETag(): Promise<string | null> {
+  return createClient(options).read('items', (response) => response.headers.get('ETag'), {
+    method: 'HEAD',
+  });
+}

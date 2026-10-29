@@ -3,11 +3,12 @@
 Two ESM npm packages maintained together:
 
 - `reboop`: HTTP client with consistent retries, deadlines and cancellation.
-- `reboop-eslint`: ESLint plugin intended to enforce use of the configured client.
+- `reboop-eslint`: ESLint plugin that rejects access to native HTTP transports and known HTTP clients.
 
 `reboop` implements network retries for GET/HEAD, attempt deadlines that include body
 consumption, and caller cancellation. See its [API documentation](packages/reboop/README.md).
-`reboop-eslint` remains a scaffold; lint rules will be implemented separately.
+`reboop-eslint` provides `reboop/require-client` and a recommended flat configuration.
+See its [detection policy and configuration](packages/reboop-eslint/README.md).
 
 ## Development
 
@@ -50,8 +51,9 @@ messages are tested as fixtures; these are not browser engine integration tests.
 
 Empty test runs fail. Coverage thresholds are 100% per source file, and Stryker's mutation
 threshold is 100%. `make mutate` runs Vitest with coverage enforcement before Stryker;
-surviving mutants independently fail the mutation check. The plugin's empty entry point
-remains a scaffold, without placeholder assertions.
+surviving mutants independently fail the mutation check. Plugin tests use ESLint's
+RuleTester and the real ESLint API with the exported recommended configuration,
+including CommonJS and TypeScript, scope resolution and precise diagnostics.
 
 Coverage is written to `coverage/`; mutation reports are written to `reports/mutation/`.
 Generated output, caches and archives are ignored by Git.

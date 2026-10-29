@@ -111,6 +111,18 @@ export default defineConfig([
     },
   },
   {
+    files: ['packages/reboop-eslint/src/origin.ts'],
+    rules: {
+      // Scope membership guarantees ancestors; explicit casts document that invariant.
+      '@typescript-eslint/non-nullable-type-assertion-style': 'off',
+      // Unsupported AST node kinds deliberately resolve to unknown in the default branch.
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { considerDefaultExhaustiveForUnions: true },
+      ],
+    },
+  },
+  {
     files: ['scripts/publish.ts'],
     rules: {
       // Archive paths use fixed names/a validated version; GITHUB_OUTPUT is a runner-owned file.
