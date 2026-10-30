@@ -1,5 +1,8 @@
 # reboop
 
+[![npm version: reboop](https://img.shields.io/npm/v/reboop?label=reboop)](https://www.npmjs.com/package/reboop)
+[![npm version: reboop-eslint](https://img.shields.io/npm/v/reboop-eslint?label=reboop-eslint)](https://www.npmjs.com/package/reboop-eslint)
+
 Two ESM npm packages maintained together:
 
 - `reboop`: HTTP client with consistent retries, deadlines and cancellation.
